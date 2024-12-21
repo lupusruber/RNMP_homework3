@@ -1,4 +1,5 @@
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.streaming import StreamingQuery
 import pyspark.sql.functions as F
 from pyspark.sql.types import StructField, FloatType, StructType
 from pyspark.ml.feature import VectorAssembler
@@ -7,7 +8,7 @@ import joblib
 from pathlib import Path
 
 PROJECT_ROOT_PATH = Path(__file__).parent.parent
-MODEL_PATH = f"{PROJECT_ROOT_PATH}/model/random_forest.pkl"
+MODEL_PATH = f"{PROJECT_ROOT_PATH}/model/best_model.pkl"
 
 BOOTSTRAP_SERVERS = "kafka:9092"
 INPUT_TOPIC = "health_data_topic"
@@ -30,7 +31,35 @@ def get_spark_session() -> SparkSession:
     return spark
 
 
-def get_kafka_data_stream(spark, topic, schema, bootstrap_servers):
+def get_kafka_data_stream(
+    spark: SparkSession, topic: str, bootstrap_servers: str
+) -> DataFrame:
+
+    schema = StructType(
+        [
+            StructField("HighBP", FloatType(), False),
+            StructField("HighChol", FloatType(), False),
+            StructField("CholCheck", FloatType(), False),
+            StructField("BMI", FloatType(), False),
+            StructField("Smoker", FloatType(), False),
+            StructField("Stroke", FloatType(), False),
+            StructField("HeartDiseaseorAttack", FloatType(), False),
+            StructField("PhysActivity", FloatType(), False),
+            StructField("Fruits", FloatType(), False),
+            StructField("Veggies", FloatType(), False),
+            StructField("HvyAlcoholConsump", FloatType(), False),
+            StructField("AnyHealthcare", FloatType(), False),
+            StructField("NoDocbcCost", FloatType(), False),
+            StructField("GenHlth", FloatType(), False),
+            StructField("MentHlth", FloatType(), False),
+            StructField("PhysHlth", FloatType(), False),
+            StructField("DiffWalk", FloatType(), False),
+            StructField("Sex", FloatType(), False),
+            StructField("Age", FloatType(), False),
+            StructField("Education", FloatType(), False),
+            StructField("Income", FloatType(), False),
+        ]
+    )
 
     stream = (
         spark.readStream.format("kafka")
@@ -55,7 +84,9 @@ def predict(features):
     return float(prediction[0])
 
 
-def send_predicitons_to_kafka(predictions, topic, bootstrap_servers):
+def send_predicitons_to_kafka(
+    predictions: DataFrame, topic: str, bootstrap_servers: str
+) -> StreamingQuery:
 
     query = (
         predictions.selectExpr("to_json(struct(*)) AS value")
@@ -70,9 +101,7 @@ def send_predicitons_to_kafka(predictions, topic, bootstrap_servers):
     return query
 
 
-if __name__ == "__main__":
-
-    model = joblib.load(MODEL_PATH)
+def main() -> None:
 
     spark = get_spark_session()
 
@@ -103,33 +132,7 @@ if __name__ == "__main__":
         outputCol="features",
     )
 
-    schema = StructType(
-        [
-            StructField("HighBP", FloatType(), False),
-            StructField("HighChol", FloatType(), False),
-            StructField("CholCheck", FloatType(), False),
-            StructField("BMI", FloatType(), False),
-            StructField("Smoker", FloatType(), False),
-            StructField("Stroke", FloatType(), False),
-            StructField("HeartDiseaseorAttack", FloatType(), False),
-            StructField("PhysActivity", FloatType(), False),
-            StructField("Fruits", FloatType(), False),
-            StructField("Veggies", FloatType(), False),
-            StructField("HvyAlcoholConsump", FloatType(), False),
-            StructField("AnyHealthcare", FloatType(), False),
-            StructField("NoDocbcCost", FloatType(), False),
-            StructField("GenHlth", FloatType(), False),
-            StructField("MentHlth", FloatType(), False),
-            StructField("PhysHlth", FloatType(), False),
-            StructField("DiffWalk", FloatType(), False),
-            StructField("Sex", FloatType(), False),
-            StructField("Age", FloatType(), False),
-            StructField("Education", FloatType(), False),
-            StructField("Income", FloatType(), False),
-        ]
-    )
-
-    data_stream = get_kafka_data_stream(spark, INPUT_TOPIC, schema, BOOTSTRAP_SERVERS)
+    data_stream = get_kafka_data_stream(spark, INPUT_TOPIC, BOOTSTRAP_SERVERS)
 
     vectorized_rows = assembler.transform(data_stream)
 
@@ -141,3 +144,9 @@ if __name__ == "__main__":
 
     query = send_predicitons_to_kafka(predictions, OUTPUT_TOPIC, BOOTSTRAP_SERVERS)
     query.awaitTermination()
+
+
+if __name__ == "__main__":
+
+    model = joblib.load(MODEL_PATH)
+    main()
